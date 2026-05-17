@@ -68,7 +68,7 @@ cd needle && source ./setup
 needle playground
 ```
 
-Opens a web UI at http://127.0.0.1:7860 where you can test and finetune on your own tools. Weights are auto-downloaded.
+Opens a web UI at http://127.0.0.1:7888 where you can test and finetune on your own tools. Weights are auto-downloaded.
 
 ## Usage (Python)
 

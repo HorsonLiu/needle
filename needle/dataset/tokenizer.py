@@ -20,6 +20,7 @@ DEFAULT_MAX_DEC_LEN = 512
 DEFAULT_MAX_GEN_LEN = 512
 
 _HF_MODEL_REPO = "Cactus-Compute/needle"
+_MS_TOKENIZER_REPO = "Cactus-Compute/needle-tokenizer"
 
 
 def to_snake_case(name):
@@ -104,11 +105,28 @@ def _download_tokenizer_from_hf():
             os.rename(nested, dst)
 
 
+def _download_tokenizer_from_modelscope():
+    """Download tokenizer files from ModelScope into TOKENIZER_DIR."""
+    from ..utils.downloads import download_from_modelscope
+
+    os.makedirs(TOKENIZER_DIR, exist_ok=True)
+    for fname in ["needle.model", "needle.vocab"]:
+        download_from_modelscope(
+            repo_id=_MS_TOKENIZER_REPO,
+            filename=fname,
+            local_dir=TOKENIZER_DIR,
+            repo_type="dataset",
+        )
+
+
 def get_tokenizer(max_samples=None):
     model_path = TOKENIZER_PREFIX + ".model"
     if not os.path.exists(model_path):
-        print("Downloading pretrained tokenizer from HuggingFace...")
-        _download_tokenizer_from_hf()
+        print("Tokenizer not found locally. Trying ModelScope, then Hugging Face...")
+        try:
+            _download_tokenizer_from_modelscope()
+        except Exception:
+            _download_tokenizer_from_hf()
     return NeedleTokenizer(model_path)
 
 

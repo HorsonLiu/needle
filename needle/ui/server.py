@@ -734,26 +734,23 @@ def _start_finetune(tools_json, api_key):
 
 
 _HF_MODEL_REPO = "Cactus-Compute/needle"
+_MS_MODEL_REPO = "Cactus-Compute/needle"
 _HF_MODEL_FILE = "needle.pkl"
 
 
 def _resolve_checkpoint(checkpoint_arg):
-    """Resolve checkpoint path: always download from HuggingFace to ensure freshness."""
-    from huggingface_hub import hf_hub_download
-    local_dir = "checkpoints"
-    os.makedirs(local_dir, exist_ok=True)
-    filename = os.path.basename(checkpoint_arg) if checkpoint_arg else _HF_MODEL_FILE
-    repo = _HF_MODEL_REPO
-    print(f"Downloading {filename} from {repo}...", file=sys.stderr)
-    path = hf_hub_download(
-        repo_id=repo,
-        filename=filename,
-        repo_type="model",
-        local_dir=local_dir,
-        force_download=True,
+    """Resolve checkpoint path, preferring local files then ModelScope then HF."""
+    from ..utils.downloads import resolve_local_then_download
+
+    return resolve_local_then_download(
+        checkpoint_arg,
+        local_dir="checkpoints",
+        default_filename=_HF_MODEL_FILE,
+        hf_repo_id=_HF_MODEL_REPO,
+        hf_repo_type="model",
+        ms_repo_id=_MS_MODEL_REPO,
+        ms_repo_type="model",
     )
-    print(f"Downloaded to {path}", file=sys.stderr)
-    return path
 
 
 def main(args):

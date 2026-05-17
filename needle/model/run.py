@@ -34,7 +34,7 @@ def normalize_tools(tools_json):
             snake = to_snake_case(orig)
             name_map[snake] = orig
             t["name"] = snake
-    return _json.dumps(tools, separators=(",", ":")), name_map
+    return _json.dumps(tools, separators=(",", ":"), ensure_ascii=False), name_map
 
 
 def restore_tool_names(pred_text, name_map):
@@ -54,7 +54,7 @@ def restore_tool_names(pred_text, name_map):
                 c["name"] = name_map.get(c["name"], c["name"])
     elif isinstance(calls, dict) and "name" in calls:
         calls["name"] = name_map.get(calls["name"], calls["name"])
-    return _json.dumps(calls, separators=(",", ":"))
+    return _json.dumps(calls, separators=(",", ":"), ensure_ascii=False)
 
 
 _decode_fn_cache = {}

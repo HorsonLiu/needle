@@ -213,18 +213,17 @@ def _emit(tag, data):
 
 
 def _resolve_checkpoint(path):
-    """Resolve checkpoint path, always downloading from HuggingFace to ensure freshness."""
-    from huggingface_hub import hf_hub_download
-    local_dir = "checkpoints"
-    os.makedirs(local_dir, exist_ok=True)
-    filename = os.path.basename(path) if path else "needle.pkl"
-    print(f"Downloading {filename} from Cactus-Compute/needle...")
-    return hf_hub_download(
-        repo_id="Cactus-Compute/needle",
-        filename=filename,
-        repo_type="model",
-        local_dir=local_dir,
-        force_download=True,
+    """Resolve checkpoint path, preferring local files then ModelScope then HF."""
+    from ..utils.downloads import resolve_local_then_download
+
+    return resolve_local_then_download(
+        path,
+        local_dir="checkpoints",
+        default_filename="needle.pkl",
+        hf_repo_id="Cactus-Compute/needle",
+        hf_repo_type="model",
+        ms_repo_id="Cactus-Compute/needle",
+        ms_repo_type="model",
     )
 
 

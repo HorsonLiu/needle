@@ -240,7 +240,7 @@ def main():
 
     p = sub.add_parser("playground", add_help=False)
     p.add_argument("--checkpoint", type=str, default=None)
-    p.add_argument("--port", type=int, default=7860)
+    p.add_argument("--port", type=int, default=7888)
     p.add_argument("--host", type=str, default="127.0.0.1")
 
     p = sub.add_parser("tpu", add_help=False)
