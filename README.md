@@ -92,7 +92,7 @@ print(result)
 ## Finetuning
 
 ```bash
-# Playground (generates data via Gemini, trains, evaluates, bundles result)
+# Playground (generates data via OpenRouter/Kimi, trains, evaluates, bundles result)
 needle playground
 
 # CLI (auto-downloads weights if not local)
@@ -152,7 +152,7 @@ needle train                       Full training run
 needle pretrain                    Pretrain on PleIAs/SYNTH
 needle eval --checkpoint <path>    Evaluate a checkpoint
 needle tokenize                    Tokenize dataset
-needle generate-data               Synthesize training data via Gemini
+needle generate-data               Synthesize training data via OpenRouter/Kimi
 needle tpu <action>                TPU management (see docs/tpu.md)
 ```
 

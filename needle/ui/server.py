@@ -188,7 +188,7 @@ def _parse_generate_request(body):
 
 
 def _parse_finetune_request(body):
-    from ..dataset.generate import LANGUAGES as _AVAILABLE_LANGUAGES
+    from ..dataset.generate import LANGUAGES as _AVAILABLE_LANGUAGES, SUPPORTED_MODELS as _SUPPORTED_MODELS
 
     tools = _normalize_tools_json(body.get("tools", "[]"))
     parsed_tools = _json.loads(tools)
@@ -208,7 +208,7 @@ def _parse_finetune_request(body):
             raise ValueError(f"tool[{i}] missing 'description' field")
     api_key = body.get("api_key")
     if not isinstance(api_key, str) or not api_key.strip():
-        raise ValueError("Gemini API key is required")
+        raise ValueError("OpenRouter API key is required")
     languages = body.get("languages", ["English"])
     if not isinstance(languages, list) or not languages:
         raise ValueError("languages must be a non-empty array")
@@ -222,7 +222,13 @@ def _parse_finetune_request(body):
             raise ValueError(f"Unsupported language: {normalized}")
         if normalized not in cleaned_languages:
             cleaned_languages.append(normalized)
-    return tools, api_key.strip(), cleaned_languages
+    model = body.get("model", _SUPPORTED_MODELS[0])
+    if not isinstance(model, str) or not model.strip():
+        raise ValueError("model must be a non-empty string")
+    model = model.strip()
+    if model not in _SUPPORTED_MODELS:
+        raise ValueError(f"Unsupported model: {model}")
+    return tools, api_key.strip(), cleaned_languages, model
 
 
 def _stream_upload_to_file(handler, max_bytes, target_dir):
@@ -276,7 +282,7 @@ def _stream_upload_to_file(handler, max_bytes, target_dir):
 _datagen_lock = threading.Lock()
 
 
-def _generate_custom_data(tools_json, api_key, num_samples, data_file, languages):
+def _generate_custom_data(tools_json, api_key, num_samples, data_file, languages, model):
     import json
     from ..dataset import generate as gd
 
@@ -291,13 +297,13 @@ def _generate_custom_data(tools_json, api_key, num_samples, data_file, languages
         return None
 
     with _datagen_lock:
-        old_api_key = os.environ.get("GEMINI_API_KEY")
+        old_api_key = os.environ.get("OPENROUTER_API_KEY")
         old_pick_tools = gd._pick_tools
         old_synthesize_tools = gd._synthesize_tools
         old_overlap_pairs = gd._OVERLAP_PAIRS
         old_languages = gd.LANGUAGES
         try:
-            os.environ["GEMINI_API_KEY"] = api_key
+            os.environ["OPENROUTER_API_KEY"] = api_key
             gd._pick_tools = _pick_tools
             gd._synthesize_tools = _synthesize_tools
             gd._OVERLAP_PAIRS = []
@@ -307,7 +313,7 @@ def _generate_custom_data(tools_json, api_key, num_samples, data_file, languages
                 num_samples,
                 workers=4,
                 batch_size=25,
-                model=gd.MODEL,
+                model=model,
                 client_pool=client_pool,
             )
             with open(data_file, "w") as f:
@@ -320,9 +326,9 @@ def _generate_custom_data(tools_json, api_key, num_samples, data_file, languages
             gd._OVERLAP_PAIRS = old_overlap_pairs
             gd.LANGUAGES = old_languages
             if old_api_key is None:
-                os.environ.pop("GEMINI_API_KEY", None)
+                os.environ.pop("OPENROUTER_API_KEY", None)
             else:
-                os.environ["GEMINI_API_KEY"] = old_api_key
+                os.environ["OPENROUTER_API_KEY"] = old_api_key
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -404,14 +410,14 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             body = _read_json_request(self)
-            tools, api_key, languages = _parse_finetune_request(body)
+            tools, api_key, languages, model = _parse_finetune_request(body)
         except ValueError as exc:
             self._json_response(400, {"error": str(exc)})
             return
         if not _current_model_path:
             self._json_response(400, {"error": "Load a model before finetuning"})
             return
-        if not _start_finetune(tools, api_key, languages):
+        if not _start_finetune(tools, api_key, languages, model):
             self._json_response(409, {"error": "finetune already running"})
             return
         self._json_response(200, {"status": "started"})
@@ -536,7 +542,7 @@ _SAMPLES_PER_TOOL = 120  # 100 train + 10 val + 10 test
 _EPOCHS = 1
 
 
-def _start_finetune(tools_json, api_key, languages):
+def _start_finetune(tools_json, api_key, languages, model):
     with _finetune_lock:
         if _finetune_status["running"]:
             return False
@@ -560,9 +566,9 @@ def _start_finetune(tools_json, api_key, languages):
 
             _set_finetune_status(step="generating data")
             _append_finetune_log(
-                f"Generating {_SAMPLES_PER_TOOL} samples/tool for {num_tools} tools in {', '.join(languages)}..."
+                f"Generating {_SAMPLES_PER_TOOL} samples/tool for {num_tools} tools in {', '.join(languages)} with {model}..."
             )
-            generated = _generate_custom_data(tools_json, api_key, num_samples, data_file, languages)
+            generated = _generate_custom_data(tools_json, api_key, num_samples, data_file, languages, model)
             if generated < 3:
                 raise RuntimeError("generated fewer than 3 examples; need more data for train/val/test")
             _append_finetune_log(f"Generated {generated} samples.")

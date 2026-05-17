@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Generate on-device assistant tool-calling training data with Gemini and merge
+"""Generate on-device assistant tool-calling training data with OpenRouter and merge
 into the existing unified dataset.
 
 Usage:
-    GEMINI_API_KEY=... python scripts/generate_data.py --num-samples 5000
-    GEMINI_API_KEY=... python scripts/generate_data.py --num-samples 100 --dry-run
-    GEMINI_API_KEY=... python scripts/generate_data.py --num-samples 5000 --workers 32
+    OPENROUTER_API_KEY=... python scripts/generate_data.py --num-samples 5000
+    OPENROUTER_API_KEY=... python scripts/generate_data.py --num-samples 100 --dry-run
+    OPENROUTER_API_KEY=... python scripts/generate_data.py --num-samples 5000 --workers 32
 """
 
 import argparse
@@ -16,8 +16,9 @@ import random
 import re
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
-from google import genai
 from tqdm import tqdm
 
 POOL_TIME_PRODUCTIVITY = [
@@ -749,7 +750,7 @@ SCENARIOS = [
     "hey wait before I forget can you remind me tomorrow about the dentist thing",
     "I dunno just like play something, anything really, some background music",
     "ugh okay fine just turn on the flashlight I can't see anything",
-    # Typos and keyboard errors — themes for Gemini to generate its own misspellings
+    # Typos and keyboard errors — themes for the upstream LLM to generate its own misspellings
     "sending a message with typos in the command",
     "setting a timer with misspelled words",
     "playing music with garbled text", "toggling a setting with missing letters",
@@ -887,7 +888,16 @@ CALL_TYPES = [
      "Generate diverse, specific queries as if the user expects tools to exist. Every query must be UNIQUE."),
 ]
 
-MODEL = "gemini-3.1-flash-lite-preview"
+SUPPORTED_MODELS = [
+    "moonshotai/kimi-k2.5",
+    "moonshotai/kimi-k2",
+    "google/gemini-2.5-flash",
+    "google/gemini-2.5-pro",
+    "anthropic/claude-3.7-sonnet",
+    "openai/gpt-4.1",
+]
+
+MODEL = "moonshotai/kimi-k2.5"
 
 LANGUAGES = [
     "English",
@@ -945,7 +955,7 @@ def _pick_tools(rng, force_empty=False, few_tools=False):
 
 
 # Random context seeds to inject diversity into each batch's prompt.
-# Each batch gets one — forces Gemini into a different user/situation space.
+# Each batch gets one — forces the upstream LLM into a different user/situation space.
 _CONTEXT_SEEDS = [
     "The user is a busy parent managing kids and household",
     "The user is a college student studying for finals",
@@ -981,7 +991,7 @@ _CONTEXT_SEEDS = [
 
 
 def build_prompt(batch_size, call_desc, tools, rng, query_length_hint=None, language="English"):
-    """Build a prompt asking Gemini to generate a batch of examples."""
+    """Build a prompt asking the upstream LLM to generate a batch of examples."""
     scenarios_sample = rng.sample(SCENARIOS, min(20, len(SCENARIOS)))
     scenarios_str = "\n".join(f"  - {s}" for s in scenarios_sample)
     context_seed = rng.choice(_CONTEXT_SEEDS)
@@ -1064,23 +1074,72 @@ OUTPUT FORMAT — return a JSON array, nothing else:
 
 Return ONLY valid JSON. No markdown, no explanation."""
 
+class OpenRouterClient:
+    """Minimal OpenRouter chat-completions client."""
+
+    def __init__(self, api_key):
+        self.api_key = api_key
+
+    def generate(self, model, prompt, temperature, max_output_tokens):
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+            "max_tokens": max_output_tokens,
+        }
+        req = Request(
+            "https://openrouter.ai/api/v1/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "https://github.com/cactus-compute/needle",
+                "X-Title": "Needle",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(req, timeout=180) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"OpenRouter HTTP {exc.code}: {detail}") from exc
+        except URLError as exc:
+            raise RuntimeError(f"OpenRouter request failed: {exc}") from exc
+
+        choices = body.get("choices") or []
+        if not choices:
+            raise RuntimeError(f"OpenRouter returned no choices: {body}")
+        message = choices[0].get("message") or {}
+        content = message.get("content", "")
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict) and item.get("type") == "text":
+                    parts.append(item.get("text", ""))
+            content = "".join(parts)
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError(f"OpenRouter returned empty content: {body}")
+        return content
+
+
 def make_clients():
-    """Create Gemini clients from GEMINI_API_KEY (comma-separated for multiple keys)."""
-    raw = os.environ.get("GEMINI_API_KEY", "")
+    """Create OpenRouter clients from OPENROUTER_API_KEY (comma-separated for multiple keys)."""
+    raw = os.environ.get("OPENROUTER_API_KEY", "")
     keys = [k.strip() for k in raw.split(",") if k.strip()]
     if not keys:
-        print("Error: GEMINI_API_KEY environment variable not set.", file=sys.stderr)
+        print("Error: OPENROUTER_API_KEY environment variable not set.", file=sys.stderr)
         print("Set one or more comma-separated keys:", file=sys.stderr)
-        print("  export GEMINI_API_KEY=key1,key2,key3", file=sys.stderr)
-        print("Get keys at https://aistudio.google.com/apikey", file=sys.stderr)
+        print("  export OPENROUTER_API_KEY=key1,key2,key3", file=sys.stderr)
+        print("Get keys at https://openrouter.ai/settings/keys", file=sys.stderr)
         sys.exit(1)
-    clients = [genai.Client(api_key=k) for k in keys]
+    clients = [OpenRouterClient(api_key=k) for k in keys]
     print(f"Using {len(clients)} API key(s)")
     return clients
 
 
 class ClientPool:
-    """Round-robin pool of Gemini clients for distributing requests across API keys."""
+    """Round-robin pool of OpenRouter clients for distributing requests across API keys."""
 
     def __init__(self, clients):
         self._clients = clients
@@ -1252,7 +1311,7 @@ def _semantic_check(tool_name, args, schema, query, call_type="single"):
     """Lightweight rule-based semantic validation of argument values.
 
     Returns False if any argument value is obviously nonsensical.
-    Catches the most common Gemini hallucination patterns without needing an LLM judge.
+    Catches the most common hallucination patterns without needing an LLM judge.
     """
     query_lower = query.lower()
 
@@ -1346,7 +1405,7 @@ _DESC_TEMPLATES = [
 ]
 
 
-# Domain categories for tool synthesis — Gemini invents tools within these bounds
+# Domain categories for tool synthesis — the upstream LLM invents tools within these bounds
 _SYNTH_DOMAINS = [
     "smart kitchen appliances (oven, fridge, blender, air purifier, water filter)",
     "pet care and pet tech (feeder, tracker, health monitor, activity log)",
@@ -1386,18 +1445,19 @@ _synth_stats = {"attempted": 0, "succeeded": 0, "failed_parse": 0, "failed_valid
 
 
 def _synthesize_tools(client_pool, rng, model, num_tools):
-    """Ask Gemini to invent novel tool definitions within a random domain."""
+    """Ask the upstream LLM to invent novel tool definitions within a random domain."""
     _synth_stats["attempted"] += 1
     domain = rng.choice(_SYNTH_DOMAINS)
     prompt = _SYNTH_TOOL_PROMPT.format(num_tools=num_tools, domain=domain)
 
     client = client_pool.get()
     try:
-        response = client.models.generate_content(
-            model=model, contents=prompt,
-            config={"temperature": 0.9, "max_output_tokens": 4096},
-        )
-        text = response.text.strip()
+        text = client.generate(
+            model=model,
+            prompt=prompt,
+            temperature=0.9,
+            max_output_tokens=4096,
+        ).strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
         if text.endswith("```"):
@@ -1431,7 +1491,7 @@ def _synthesize_tools(client_pool, rng, model, num_tools):
                             "required": pinfo.get("required", False),
                         }
                     elif isinstance(pinfo, str):
-                        # Gemini sometimes produces {"param": "description string"}
+                        # The upstream LLM sometimes produces {"param": "description string"}
                         normalized[pname] = {
                             "type": "string",
                             "description": pinfo,
@@ -1521,16 +1581,12 @@ def generate_batch(client_pool, batch_size, rng, model, language="English"):
     temperature = rng.choice([0.7, 0.8, 0.9, 1.0, 1.0, 1.0, 1.1, 1.1, 1.2, 1.3])
 
     client = client_pool.get()
-    response = client.models.generate_content(
+    text = client.generate(
         model=model,
-        contents=prompt,
-        config={
-            "temperature": temperature,
-            "max_output_tokens": 16384,
-        },
-    )
-
-    text = response.text.strip()
+        prompt=prompt,
+        temperature=temperature,
+        max_output_tokens=16384,
+    ).strip()
     if text.startswith("```"):
         text = text.split("\n", 1)[1] if "\n" in text else text[3:]
     if text.endswith("```"):
@@ -1649,7 +1705,7 @@ def generate_batch(client_pool, batch_size, rng, model, language="English"):
 
 
 def generate_all(num_samples, workers=8, batch_size=25, model=MODEL, client_pool=None):
-    """Generate num_samples examples using parallel Gemini calls."""
+    """Generate num_samples examples using parallel OpenRouter calls."""
     if client_pool is None:
         client_pool = ClientPool(make_clients())
     rng = random.Random(42)
@@ -1926,7 +1982,7 @@ def main(args):
 
 if __name__ == "__main__":
     import argparse as _ap
-    _p = _ap.ArgumentParser(description="Generate on-device assistant tool-calling data with Gemini")
+    _p = _ap.ArgumentParser(description="Generate on-device assistant tool-calling data with OpenRouter/Kimi")
     _p.add_argument("--num-samples", type=int, default=500)
     _p.add_argument("--batch-size", type=int, default=10)
     _p.add_argument("--workers", type=int, default=8)

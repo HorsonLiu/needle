@@ -77,8 +77,19 @@
       </div>
       <div class="modal-body">
         <div class="modal-field">
-          <label class="modal-label">Gemini API Key</label>
+          <label class="modal-label">OpenRouter API Key</label>
           <input type="password" id="ftApiKey" class="modal-input" placeholder="Paste your API key" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="modal-field">
+          <label class="modal-label">Generation Model</label>
+          <select id="ftModel" class="modal-input">
+            <option value="moonshotai/kimi-k2.5" selected>moonshotai/kimi-k2.5</option>
+            <option value="moonshotai/kimi-k2">moonshotai/kimi-k2</option>
+            <option value="google/gemini-2.5-flash">google/gemini-2.5-flash</option>
+            <option value="google/gemini-2.5-pro">google/gemini-2.5-pro</option>
+            <option value="anthropic/claude-3.7-sonnet">anthropic/claude-3.7-sonnet</option>
+            <option value="openai/gpt-4.1">openai/gpt-4.1</option>
+          </select>
         </div>
         <div class="modal-field">
           <label class="modal-label">Languages</label>

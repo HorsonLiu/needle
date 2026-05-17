@@ -214,9 +214,9 @@ def main():
 
     p = sub.add_parser("generate-data", add_help=False)
     p.add_argument("--num-samples", type=int, default=500, help="Number of samples to generate")
-    p.add_argument("--batch-size", type=int, default=25, help="Examples per Gemini call")
-    p.add_argument("--workers", type=int, default=8, help="Parallel Gemini calls")
-    p.add_argument("--model", type=str, default=None, help="Gemini model override")
+    p.add_argument("--batch-size", type=int, default=25, help="Examples per OpenRouter call")
+    p.add_argument("--workers", type=int, default=8, help="Parallel OpenRouter calls")
+    p.add_argument("--model", type=str, default=None, help="OpenRouter model override")
     p.add_argument("--dry-run", action="store_true", help="Generate only, skip save and upload")
     p.add_argument("--output-jsonl", type=str, default=None, help="Also save raw generations to JSONL")
     p.add_argument("--upload-every", type=int, default=None, help="Merge+upload every N samples")

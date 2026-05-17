@@ -168,7 +168,7 @@ function _getFinetuneLanguages() {
 async function startFinetune() {
   var apiKey = document.getElementById("ftApiKey").value.trim();
   if (!apiKey) {
-    showError("Gemini API key is required");
+    showError("OpenRouter API key is required");
     return;
   }
 
@@ -183,6 +183,11 @@ async function startFinetune() {
   var languages = _getFinetuneLanguages();
   if (!languages.length) {
     showError("Select at least one language");
+    return;
+  }
+  var model = document.getElementById("ftModel").value;
+  if (!model) {
+    showError("Select a generation model");
     return;
   }
 
@@ -202,6 +207,7 @@ async function startFinetune() {
       body: JSON.stringify({
         tools: tools,
         api_key: apiKey,
+        model: model,
         languages: languages,
       }),
     });

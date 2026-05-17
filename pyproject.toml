@@ -15,7 +15,6 @@ dependencies = [
     "scipy",
     "gcsfs",
     "tqdm",
-    "google-genai",
 ]
 
 [project.optional-dependencies]
