@@ -1,12 +1,2 @@
-jax
-jaxlib
-flax
-optax
-datasets
-huggingface_hub
-gcsfs
-transformers
-wandb
-pyyaml
-sentencepiece
-google-genai
+# Minimal install entrypoint: let pyproject.toml own dependency resolution.
+-e .

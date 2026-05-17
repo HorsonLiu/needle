@@ -4,22 +4,19 @@ version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
     "jax",
-    "jaxlib",
     "flax",
     "optax",
     "datasets",
     "huggingface_hub",
-    "transformers",
-    "wandb",
     "sentencepiece",
-    "scipy",
-    "gcsfs",
     "tqdm",
 ]
 
 [project.optional-dependencies]
 tpu = ["jax[tpu]"]
 gpu = ["jax[cuda12]"]
+train = ["wandb"]
+cloud = ["gcsfs"]
 
 [project.scripts]
 needle = "needle.cli:main"

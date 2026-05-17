@@ -64,8 +64,26 @@ Please use the UI in the next section to test on your own tools, and finetune ac
 
 ```bash
 git clone https://github.com/cactus-compute/needle.git
-cd needle && source ./setup
+cd needle
+source ./setup
 needle playground
+```
+
+`setup` now prefers the current virtual environment if one is already active. It only creates `.venv` when no environment is active and no project venv exists.
+
+If you want optional extras, install them explicitly:
+
+```bash
+python -m pip install -e ".[gpu]"    # NVIDIA CUDA JAX build
+python -m pip install -e ".[tpu]"    # TPU JAX build
+python -m pip install -e ".[train]"  # wandb
+python -m pip install -e ".[cloud]"  # gcsfs
+```
+
+You can also ask `setup` to install extras in one step:
+
+```bash
+NEEDLE_EXTRAS=gpu source ./setup
 ```
 
 Opens a web UI at http://127.0.0.1:7888 where you can test and finetune on your own tools. Weights are auto-downloaded.
@@ -99,6 +117,8 @@ needle playground
 needle finetune data.jsonl
 ```
 
+The playground finetune flow requires an OpenRouter API key because it first synthesizes training examples, then trains on those generated examples.
+
 ### Data format
 
 Each line in the JSONL file has three fields: `query`, `tools`, and `answers`.
@@ -125,7 +145,7 @@ Each line in the JSONL file has three fields: `query`, `tools`, and `answers`.
 {"query": "Turn off the lights", "tools": "[{\"name\":\"get_weather\",\"description\":\"Get current weather for a city.\",\"parameters\":{\"location\":{\"type\":\"string\",\"description\":\"City name.\",\"required\":true}}},{\"name\":\"toggle_lights\",\"description\":\"Toggle smart lights on or off.\",\"parameters\":{\"state\":{\"type\":\"string\",\"description\":\"on or off.\",\"required\":true}}}]", "answers": "[{\"name\":\"toggle_lights\",\"arguments\":{\"state\":\"off\"}}]"}
 ```
 
-Provide at least **120 examples per tool** (100 train / 10 val / 10 test). Fewer examples will overfit — you'll see perfect training metrics but the model won't generalize. Vary query phrasing and include examples with multiple tools available.
+As a starting point, aim for about **120 examples per tool** (for example `100 train / 10 val / 10 test`). The UI and CLI now let you choose different per-tool split targets, but smaller datasets will overfit more easily. Vary query phrasing and include examples with multiple tools available.
 
 ### Using a finetuned model
 
