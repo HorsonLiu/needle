@@ -65,11 +65,12 @@ Please use the UI in the next section to test on your own tools, and finetune ac
 ```bash
 git clone https://github.com/cactus-compute/needle.git
 cd needle
-source ./setup
+./setup
+source .venv/bin/activate  # if you are not already in your own virtual environment
 needle playground
 ```
 
-`setup` now prefers the current virtual environment if one is already active. It only creates `.venv` when no environment is active and no project venv exists.
+`setup` reuses your active virtual environment when possible; otherwise it installs into the project `.venv`.
 
 If you want optional extras, install them explicitly:
 
@@ -83,7 +84,7 @@ python -m pip install -e ".[cloud]"  # gcsfs
 You can also ask `setup` to install extras in one step:
 
 ```bash
-NEEDLE_EXTRAS=gpu source ./setup
+NEEDLE_EXTRAS=gpu ./setup
 ```
 
 Opens a web UI at http://127.0.0.1:7888 where you can test and finetune on your own tools. Weights are auto-downloaded.

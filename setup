@@ -5,6 +5,40 @@ set -e
 VENV_DIR=".venv"
 MIN_PYTHON="3.10"
 
+_needle_setup_sourced=0
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then
+    _needle_setup_sourced=1
+fi
+
+_needle_setup_had_errexit=0
+case $- in
+    *e*) _needle_setup_had_errexit=1 ;;
+esac
+
+_needle_setup_restore_shell_state() {
+    if [ "$_needle_setup_sourced" = "1" ] && [ "$_needle_setup_had_errexit" = "0" ]; then
+        set +e
+    fi
+    trap - INT TERM
+}
+
+_needle_setup_die() {
+    local code="${1:-1}"
+    _needle_setup_restore_shell_state
+    if [ "$_needle_setup_sourced" = "1" ]; then
+        return "$code"
+    fi
+    exit "$code"
+}
+
+_needle_setup_on_interrupt() {
+    echo ""
+    echo "setup interrupted."
+    _needle_setup_die 130
+}
+
+trap _needle_setup_on_interrupt INT TERM
+
 version_ok() {
     "$1" -c "import sys; print(int(sys.version_info >= (3, 10)))" 2>/dev/null
 }
@@ -19,19 +53,20 @@ find_python() {
     return 1
 }
 
-if [ -n "${VIRTUAL_ENV:-}" ]; then
+if [ -n "${VIRTUAL_ENV:-}" ] || [ -n "${CONDA_PREFIX:-}" ]; then
     PYTHON="${PYTHON:-python}"
     if [ "$(version_ok "$PYTHON")" != "1" ]; then
         echo "Error: active virtual environment uses Python < ${MIN_PYTHON}."
-        return 1 2>/dev/null || exit 1
+        _needle_setup_die 1
     fi
-    echo "Using active virtual environment: $VIRTUAL_ENV"
+    ACTIVE_ENV="${VIRTUAL_ENV:-$CONDA_PREFIX}"
+    echo "Using active virtual environment: $ACTIVE_ENV"
 elif [ -f "$VENV_DIR/bin/activate" ]; then
     source "$VENV_DIR/bin/activate"
     PYTHON="${PYTHON:-python}"
     if [ "$(version_ok "$PYTHON")" != "1" ]; then
         echo "Error: $VENV_DIR uses Python < ${MIN_PYTHON}. Recreate it manually if needed."
-        return 1 2>/dev/null || exit 1
+        _needle_setup_die 1
     fi
     echo "Using existing virtual environment: $VENV_DIR"
 else
@@ -39,7 +74,7 @@ else
     if [ -z "$PYTHON" ]; then
         echo "Error: Python >= ${MIN_PYTHON} is required."
         echo "Create or activate a compatible virtual environment first."
-        return 1 2>/dev/null || exit 1
+        _needle_setup_die 1
     fi
     echo "Creating virtual environment with $PYTHON..."
     "$PYTHON" -m venv "$VENV_DIR"
@@ -62,8 +97,8 @@ Install them only if you need them, for example:
   python -m pip install -e ".[train]"
   python -m pip install -e ".[cloud]"
 
-Or set NEEDLE_EXTRAS before sourcing this script:
-  NEEDLE_EXTRAS=gpu source ./setup
+Or set NEEDLE_EXTRAS before running this script:
+  NEEDLE_EXTRAS=gpu ./setup
 
 EOF
 fi
@@ -72,3 +107,5 @@ python -c "import jax; print('JAX devices:', jax.devices())" 2>/dev/null || \
     echo "Warning: jax import failed; install the appropriate JAX build for your environment."
 
 needle --help
+
+_needle_setup_restore_shell_state
