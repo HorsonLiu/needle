@@ -165,6 +165,11 @@ function _getFinetuneLanguages() {
   return values;
 }
 
+function _getPositiveIntInput(id) {
+  var value = parseInt(document.getElementById(id).value, 10);
+  return Number.isFinite(value) ? value : 0;
+}
+
 async function startFinetune() {
   var apiKey = document.getElementById("ftApiKey").value.trim();
   if (!apiKey) {
@@ -190,6 +195,13 @@ async function startFinetune() {
     showError("Select a generation model");
     return;
   }
+  var trainPerTool = _getPositiveIntInput("ftTrainPerTool");
+  var valPerTool = _getPositiveIntInput("ftValPerTool");
+  var testPerTool = _getPositiveIntInput("ftTestPerTool");
+  if (trainPerTool < 1 || valPerTool < 1 || testPerTool < 1) {
+    showError("Train / Val / Test samples per tool must all be at least 1");
+    return;
+  }
 
   var btn = document.getElementById("ftStartBtn");
   btn.disabled = true;
@@ -209,6 +221,9 @@ async function startFinetune() {
         api_key: apiKey,
         model: model,
         languages: languages,
+        train_per_tool: trainPerTool,
+        val_per_tool: valPerTool,
+        test_per_tool: testPerTool,
       }),
     });
     if (!r.ok && !(r.headers.get("content-type") || "").includes("json")) throw new Error("Server error " + r.status);

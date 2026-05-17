@@ -237,6 +237,9 @@ def main():
     p.add_argument("--cache-dir", type=str, default=None)
     p.add_argument("--max-enc-len", type=int, default=None)
     p.add_argument("--max-dec-len", type=int, default=None)
+    p.add_argument("--target-train-per-tool", type=int, default=100)
+    p.add_argument("--val-per-tool", type=int, default=10)
+    p.add_argument("--test-per-tool", type=int, default=10)
 
     p = sub.add_parser("playground", add_help=False)
     p.add_argument("--checkpoint", type=str, default=None)

@@ -188,7 +188,7 @@ def _parse_generate_request(body):
 
 
 def _parse_finetune_request(body):
-    from ..dataset.generate import LANGUAGES as _AVAILABLE_LANGUAGES, SUPPORTED_MODELS as _SUPPORTED_MODELS
+    from ..dataset.generate import LANGUAGES as _AVAILABLE_LANGUAGES, MODEL as _DEFAULT_MODEL
 
     tools = _normalize_tools_json(body.get("tools", "[]"))
     parsed_tools = _json.loads(tools)
@@ -222,13 +222,14 @@ def _parse_finetune_request(body):
             raise ValueError(f"Unsupported language: {normalized}")
         if normalized not in cleaned_languages:
             cleaned_languages.append(normalized)
-    model = body.get("model", _SUPPORTED_MODELS[0])
+    model = body.get("model", _DEFAULT_MODEL)
     if not isinstance(model, str) or not model.strip():
         raise ValueError("model must be a non-empty string")
     model = model.strip()
-    if model not in _SUPPORTED_MODELS:
-        raise ValueError(f"Unsupported model: {model}")
-    return tools, api_key.strip(), cleaned_languages, model
+    train_per_tool = _clamp_int(body.get("train_per_tool", 100), 100, 1, 1000, "train_per_tool")
+    val_per_tool = _clamp_int(body.get("val_per_tool", 10), 10, 1, 200, "val_per_tool")
+    test_per_tool = _clamp_int(body.get("test_per_tool", 10), 10, 1, 200, "test_per_tool")
+    return tools, api_key.strip(), cleaned_languages, model, train_per_tool, val_per_tool, test_per_tool
 
 
 def _stream_upload_to_file(handler, max_bytes, target_dir):
@@ -410,14 +411,14 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             body = _read_json_request(self)
-            tools, api_key, languages, model = _parse_finetune_request(body)
+            tools, api_key, languages, model, train_per_tool, val_per_tool, test_per_tool = _parse_finetune_request(body)
         except ValueError as exc:
             self._json_response(400, {"error": str(exc)})
             return
         if not _current_model_path:
             self._json_response(400, {"error": "Load a model before finetuning"})
             return
-        if not _start_finetune(tools, api_key, languages, model):
+        if not _start_finetune(tools, api_key, languages, model, train_per_tool, val_per_tool, test_per_tool):
             self._json_response(409, {"error": "finetune already running"})
             return
         self._json_response(200, {"status": "started"})
@@ -538,11 +539,10 @@ def _validate_training_data(data_file_path):
     }
 
 
-_SAMPLES_PER_TOOL = 120  # 100 train + 10 val + 10 test
 _EPOCHS = 1
 
 
-def _start_finetune(tools_json, api_key, languages, model):
+def _start_finetune(tools_json, api_key, languages, model, train_per_tool, val_per_tool, test_per_tool):
     with _finetune_lock:
         if _finetune_status["running"]:
             return False
@@ -562,11 +562,13 @@ def _start_finetune(tools_json, api_key, languages, model):
 
         try:
             num_tools = len(_json.loads(tools_json))
-            num_samples = _SAMPLES_PER_TOOL * num_tools
+            samples_per_tool = train_per_tool + val_per_tool + test_per_tool
+            num_samples = samples_per_tool * num_tools
 
             _set_finetune_status(step="generating data")
             _append_finetune_log(
-                f"Generating {_SAMPLES_PER_TOOL} samples/tool for {num_tools} tools in {', '.join(languages)} with {model}..."
+                f"Generating {samples_per_tool} samples/tool ({train_per_tool}/{val_per_tool}/{test_per_tool}) "
+                f"for {num_tools} tools in {', '.join(languages)} with {model}..."
             )
             generated = _generate_custom_data(tools_json, api_key, num_samples, data_file, languages, model)
             if generated < 3:
@@ -615,6 +617,9 @@ def _start_finetune(tools_json, api_key, languages, model):
                     "--batch-size", str(batch_size),
                     "--checkpoint-dir", str(ckpt_dir),
                     "--cache-dir", str(cache_dir),
+                    "--target-train-per-tool", str(train_per_tool),
+                    "--val-per-tool", str(val_per_tool),
+                    "--test-per-tool", str(test_per_tool),
                     *checkpoint_arg,
                 ],
                 cwd=str(_project_root()),
@@ -675,7 +680,11 @@ def _start_finetune(tools_json, api_key, languages, model):
 
             with open(data_file) as _df:
                 all_examples = [_json.loads(ln) for ln in _df if ln.strip()]
-            train_examples, val_examples, test_examples = _per_tool_split(all_examples)
+            train_examples, val_examples, test_examples = _per_tool_split(
+                all_examples,
+                val_per_tool=val_per_tool,
+                test_per_tool=test_per_tool,
+            )
 
             with _finetune_lock:
                 base_eval = _finetune_status.get("base_eval")
@@ -692,9 +701,18 @@ def _start_finetune(tools_json, api_key, languages, model):
             eval_report = {
                 "model": ckpt_name,
                 "finetuned_checkpoint": final_name,
-                "training": {"examples": len(train_examples), "tools": num_tools, "epochs": _EPOCHS},
-                "validation": {"examples": len(val_examples)},
-                "test": {"examples": len(test_examples), "duplicates": validation.get("duplicates", 0)},
+                "training": {
+                    "examples": len(train_examples),
+                    "tools": num_tools,
+                    "epochs": _EPOCHS,
+                    "target_per_tool": train_per_tool,
+                },
+                "validation": {"examples": len(val_examples), "target_per_tool": val_per_tool},
+                "test": {
+                    "examples": len(test_examples),
+                    "duplicates": validation.get("duplicates", 0),
+                    "target_per_tool": test_per_tool,
+                },
                 "base": {k: base_eval.get(k) for k in ("call_f1", "name_f1", "exact_match", "parse_rate", "args_acc")} if base_eval else None,
                 "finetuned": {k: last_eval.get(k) for k in ("call_f1", "name_f1", "exact_match", "parse_rate", "args_acc")} if last_eval else None,
                 "per_tool": per_tool_report,
@@ -710,6 +728,7 @@ def _start_finetune(tools_json, api_key, languages, model):
                 f"## Training\n"
                 f"- Base model: {ckpt_name}\n"
                 f"- Epochs: {_EPOCHS}\n"
+                f"- Target split per tool: train {train_per_tool} / val {val_per_tool} / test {test_per_tool}\n"
                 f"- Training examples: {len(train_examples)}\n"
                 f"- Validation examples: {len(val_examples)} (used for checkpoint selection)\n"
                 f"- Test examples: {len(test_examples)} (held out, used for eval)\n"

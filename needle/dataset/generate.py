@@ -1714,6 +1714,7 @@ def generate_all(num_samples, workers=8, batch_size=25, model=MODEL, client_pool
     max_submissions = target // batch_size * 3  # hard cap to prevent infinite loop
     all_examples = []
     failed = 0
+    batch_errors = []
 
     pbar = tqdm(total=num_samples, desc="Generating", unit="ex")
 
@@ -1743,6 +1744,9 @@ def generate_all(num_samples, workers=8, batch_size=25, model=MODEL, client_pool
                     all_examples.extend(results)
                 except Exception as e:
                     failed += 1
+                    err = str(e).strip() or repr(e)
+                    batch_errors.append(err)
+                    print(f"[generate_batch error] {err}", file=sys.stderr)
                 pbar.n = min(len(all_examples), num_samples)
                 pbar.set_postfix(failed=failed)
                 pbar.refresh()
@@ -1775,6 +1779,12 @@ def generate_all(num_samples, workers=8, batch_size=25, model=MODEL, client_pool
     print(f"  Tool count distribution: {dict(sorted(tool_counts.items()))}")
     lang_counts = Counter(ex.get("language", "English") for ex in deduped)
     print(f"  Language distribution: {dict(lang_counts.most_common())}")
+    if batch_errors:
+        uniq = []
+        for err in batch_errors:
+            if err not in uniq:
+                uniq.append(err)
+        print(f"  Batch errors: {uniq[:5]}")
     if _synth_stats["attempted"] > 0:
         print(f"  Tool synthesis: {_synth_stats['succeeded']}/{_synth_stats['attempted']} succeeded "
               f"(parse_fail={_synth_stats['failed_parse']}, validate_fail={_synth_stats['failed_validate']}, "

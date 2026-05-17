@@ -236,16 +236,20 @@ def finetune_local(args):
     print(f"Loaded {len(examples)} examples from {args.jsonl_path}")
     if len(examples) < 3:
         raise ValueError("finetune requires at least 3 examples for train/val/test splits")
+    target_train_per_tool = max(1, int(getattr(args, "target_train_per_tool", 100)))
+    val_per_tool = max(1, int(getattr(args, "val_per_tool", 10)))
+    test_per_tool = max(1, int(getattr(args, "test_per_tool", 10)))
+    recommended_total = target_train_per_tool + val_per_tool + test_per_tool
     tool_counts = Counter()
     for ex in examples:
         for call in json.loads(ex.get("answers", "[]")):
             if call.get("name"):
                 tool_counts[call["name"]] += 1
-    low_tools = {t: c for t, c in tool_counts.items() if c < 120}
+    low_tools = {t: c for t, c in tool_counts.items() if c < recommended_total}
     if low_tools:
         print(
-            f"\n⚠  WARNING: The following tools have fewer than 120 examples "
-            f"(need at least 120 per tool: 100 train / 10 val / 10 test):"
+            f"\n⚠  WARNING: The following tools have fewer than {recommended_total} examples "
+            f"(target split per tool: {target_train_per_tool} train / {val_per_tool} val / {test_per_tool} test):"
         )
         for tool, count in sorted(low_tools.items()):
             print(f"   • {tool}: {count}")
@@ -262,7 +266,11 @@ def finetune_local(args):
     cache_dir = args.cache_dir or tempfile.mkdtemp(prefix="needle-finetune-cache-")
     os.makedirs(cache_dir, exist_ok=True)
 
-    train_examples, val_examples, test_examples = _per_tool_split(examples)
+    train_examples, val_examples, test_examples = _per_tool_split(
+        examples,
+        val_per_tool=val_per_tool,
+        test_per_tool=test_per_tool,
+    )
 
     if len(train_examples) == 0:
         all_avail = val_examples + test_examples
@@ -382,4 +390,7 @@ if __name__ == "__main__":
     p.add_argument("--cache-dir", type=str, default=None)
     p.add_argument("--max-enc-len", type=int, default=None)
     p.add_argument("--max-dec-len", type=int, default=None)
+    p.add_argument("--target-train-per-tool", type=int, default=100)
+    p.add_argument("--val-per-tool", type=int, default=10)
+    p.add_argument("--test-per-tool", type=int, default=10)
     finetune_local(p.parse_args())
