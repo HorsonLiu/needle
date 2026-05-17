@@ -156,6 +156,15 @@ function _resetModal() {
   }
 }
 
+function _getFinetuneLanguages() {
+  var checked = document.querySelectorAll('#ftLanguages input[type="checkbox"]:checked');
+  var values = [];
+  for (var i = 0; i < checked.length; i++) {
+    values.push(checked[i].value);
+  }
+  return values;
+}
+
 async function startFinetune() {
   var apiKey = document.getElementById("ftApiKey").value.trim();
   if (!apiKey) {
@@ -168,6 +177,12 @@ async function startFinetune() {
     JSON.parse(tools);
   } catch (e) {
     showError("Invalid tools JSON");
+    return;
+  }
+
+  var languages = _getFinetuneLanguages();
+  if (!languages.length) {
+    showError("Select at least one language");
     return;
   }
 
@@ -187,6 +202,7 @@ async function startFinetune() {
       body: JSON.stringify({
         tools: tools,
         api_key: apiKey,
+        languages: languages,
       }),
     });
     if (!r.ok && !(r.headers.get("content-type") || "").includes("json")) throw new Error("Server error " + r.status);

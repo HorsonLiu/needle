@@ -188,6 +188,8 @@ def _parse_generate_request(body):
 
 
 def _parse_finetune_request(body):
+    from ..dataset.generate import LANGUAGES as _AVAILABLE_LANGUAGES
+
     tools = _normalize_tools_json(body.get("tools", "[]"))
     parsed_tools = _json.loads(tools)
     if not parsed_tools:
@@ -207,7 +209,20 @@ def _parse_finetune_request(body):
     api_key = body.get("api_key")
     if not isinstance(api_key, str) or not api_key.strip():
         raise ValueError("Gemini API key is required")
-    return tools, api_key.strip()
+    languages = body.get("languages", ["English"])
+    if not isinstance(languages, list) or not languages:
+        raise ValueError("languages must be a non-empty array")
+    cleaned_languages = []
+    allowed_languages = set(_AVAILABLE_LANGUAGES)
+    for i, language in enumerate(languages):
+        if not isinstance(language, str) or not language.strip():
+            raise ValueError(f"languages[{i}] must be a non-empty string")
+        normalized = language.strip()
+        if normalized not in allowed_languages:
+            raise ValueError(f"Unsupported language: {normalized}")
+        if normalized not in cleaned_languages:
+            cleaned_languages.append(normalized)
+    return tools, api_key.strip(), cleaned_languages
 
 
 def _stream_upload_to_file(handler, max_bytes, target_dir):
@@ -261,7 +276,7 @@ def _stream_upload_to_file(handler, max_bytes, target_dir):
 _datagen_lock = threading.Lock()
 
 
-def _generate_custom_data(tools_json, api_key, num_samples, data_file):
+def _generate_custom_data(tools_json, api_key, num_samples, data_file, languages):
     import json
     from ..dataset import generate as gd
 
@@ -286,7 +301,7 @@ def _generate_custom_data(tools_json, api_key, num_samples, data_file):
             gd._pick_tools = _pick_tools
             gd._synthesize_tools = _synthesize_tools
             gd._OVERLAP_PAIRS = []
-            gd.LANGUAGES = ["English"]
+            gd.LANGUAGES = list(languages)
             client_pool = gd.ClientPool(gd.make_clients())
             examples = gd.generate_all(
                 num_samples,
@@ -389,14 +404,14 @@ class _Handler(BaseHTTPRequestHandler):
             return
         try:
             body = _read_json_request(self)
-            tools, api_key = _parse_finetune_request(body)
+            tools, api_key, languages = _parse_finetune_request(body)
         except ValueError as exc:
             self._json_response(400, {"error": str(exc)})
             return
         if not _current_model_path:
             self._json_response(400, {"error": "Load a model before finetuning"})
             return
-        if not _start_finetune(tools, api_key):
+        if not _start_finetune(tools, api_key, languages):
             self._json_response(409, {"error": "finetune already running"})
             return
         self._json_response(200, {"status": "started"})
@@ -521,7 +536,7 @@ _SAMPLES_PER_TOOL = 120  # 100 train + 10 val + 10 test
 _EPOCHS = 1
 
 
-def _start_finetune(tools_json, api_key):
+def _start_finetune(tools_json, api_key, languages):
     with _finetune_lock:
         if _finetune_status["running"]:
             return False
@@ -544,8 +559,10 @@ def _start_finetune(tools_json, api_key):
             num_samples = _SAMPLES_PER_TOOL * num_tools
 
             _set_finetune_status(step="generating data")
-            _append_finetune_log(f"Generating {_SAMPLES_PER_TOOL} samples/tool for {num_tools} tools...")
-            generated = _generate_custom_data(tools_json, api_key, num_samples, data_file)
+            _append_finetune_log(
+                f"Generating {_SAMPLES_PER_TOOL} samples/tool for {num_tools} tools in {', '.join(languages)}..."
+            )
+            generated = _generate_custom_data(tools_json, api_key, num_samples, data_file, languages)
             if generated < 3:
                 raise RuntimeError("generated fewer than 3 examples; need more data for train/val/test")
             _append_finetune_log(f"Generated {generated} samples.")

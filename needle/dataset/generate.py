@@ -891,6 +891,7 @@ MODEL = "gemini-3.1-flash-lite-preview"
 
 LANGUAGES = [
     "English",
+    "Chinese",
     "Bulgarian", "Croatian", "Czech", "Danish", "Dutch",
     "Estonian", "Finnish", "French", "German", "Greek", "Hungarian",
     "Italian", "Latvian", "Lithuanian", "Maltese", "Polish",

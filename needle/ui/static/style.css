@@ -445,6 +445,28 @@ textarea::placeholder {
   color: var(--muted-foreground);
 }
 
+.modal-checkgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px 10px;
+  padding: 10px 12px;
+  background: var(--input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.modal-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--foreground);
+}
+
+.modal-check input {
+  margin: 0;
+}
+
 .modal-input-sm {
   font-family: 'Geist Mono', monospace;
 }
